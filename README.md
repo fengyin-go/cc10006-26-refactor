@@ -75,5 +75,35 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 批处理执行契约
+
+批量转换、编排调度和批处理回执共用一份执行契约：
+
+- 模型定义在 `backend/app/services/batch_models.py`：状态映射、动作契约、
+  `BatchTaskDefinition`（处理脚本/依赖上游等任务字段）和 `ExecutionReceipt`。
+- 状态推进只在 `backend/app/services/batch_execution.py`：每个任务只有一条执行
+  记录，页面动作、调度器超时、批处理回执写入都落在它上面。
+- 规范状态为 `draft/scheduled/running/succeeded/failed`；对外 `status` 仍输出中文
+  （草稿/待调度/运行中/已完成/已失败），旧页面与导出的中文字段保持不变。
+- 已完成/已失败是终态，任何新动作都不能跳级覆盖；重复请求按幂等键或同向动作
+  返回同一条回执，不会重复写审计。
+- 旧任务记录没有执行记录时按原字段补齐，原动作（提交调度/启动任务/终止任务/
+  归档结果）仍落到原来的目标状态；状态冲突以最新一条有效回执为准。
+- 关联的编排计划会带出相同执行记录的 `execution_status` / `final_status`；审计
+  日志记录 `操作来源`（页面/调度器/批处理）与 `最终状态`。
+
+相关接口：
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/batch/actions` | 动作契约与状态顺序 |
+| `GET /api/batch/executions` | 全部执行记录 |
+| `GET /api/batch/{id}/execution` | 单任务执行记录与回执链 |
+| `POST /api/batch/{id}/actions` | 页面动作，兼容 `{values:{action}}` |
+| `POST /api/batch/{id}/timeout` | 调度器超时结束 |
+| `POST /api/batch/receipts` | 批处理回执写入完成/失败 |
+| `GET /api/schedule/{id}/executions` | 计划关联的执行记录 |
+| `POST /api/schedule/{id}/timeout` | 调度器结束计划内任务 |
+
 领域：数据工程
 子方向：数仓与数据湖

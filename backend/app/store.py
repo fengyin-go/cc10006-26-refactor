@@ -14,6 +14,9 @@ class Store:
         self._tables: dict[str, list[dict[str, Any]]] = {
             name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
         }
+        # 批处理执行记录是跨模块的共用对象，不单独算一个业务模块，
+        # 避免运营概览和健康检查把内部表也统计进去。
+        self._executions: list[dict[str, Any]] = []
 
     def module_names(self) -> list[str]:
         return sorted(self._tables)
@@ -25,6 +28,29 @@ class Store:
         for row in self.rows(module):
             if int(row.get("id", 0)) == entry_id:
                 return row
+        return None
+
+    def executions(self) -> list[dict[str, Any]]:
+        return self._executions
+
+    def find_execution(self, execution_id: str) -> dict[str, Any] | None:
+        for row in self._executions:
+            if row.get("execution_id") == execution_id:
+                return row
+        return None
+
+    def execution_for_task(self, task_id: int) -> dict[str, Any] | None:
+        for row in self._executions:
+            if int(row.get("task_id", 0) or 0) == task_id:
+                return row
+        return None
+
+    def reset(self) -> None:
+        """恢复示例数据；测试和本地调试时可以重新拿到干净状态。"""
+        self._tables = {
+            name: [dict(row) for row in rows] for name, rows in SEED_ROWS.items()
+        }
+        self._executions = []
         return None
 
     def overview(self) -> dict[str, object]:

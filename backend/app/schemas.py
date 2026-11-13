@@ -19,6 +19,13 @@ class ActionResult(BaseModel):
     ok: bool
     message: str
     entry: dict[str, Any] | None = None
+    # 批处理类动作额外回传执行记录与回执；其他模块保持原结构不变。
+    execution: dict[str, Any] | None = None
+    receipt: dict[str, Any] | None = None
+    status: str | None = None
+    final_status: str | None = None
+    trigger_source: str | None = None
+    idempotent: bool = False
 
 
 class EntryPayload(BaseModel):
@@ -26,6 +33,76 @@ class EntryPayload(BaseModel):
 
     values: dict[str, Any] = Field(default_factory=dict)
     remark: str | None = None
+
+
+class BatchActionPayload(BaseModel):
+    """批处理动作请求：兼容旧写法 {values: {action}}，也接受顶层 action。
+
+    ``source`` 显式标记触发来源（page/scheduler/batch）；幂等键用于重复请求。
+    """
+
+    values: dict[str, Any] = Field(default_factory=dict)
+    remark: str | None = None
+    action: str | None = None
+    source: str | None = None
+    idempotency_key: str | None = None
+
+    def resolved_action(self) -> str:
+        return str(self.action or self.values.get("action") or "").strip()
+
+    def resolved_source(self, default: str = "page") -> str:
+        return str(self.source or self.values.get("source") or default).strip() or default
+
+    def resolved_idempotency_key(self) -> str | None:
+        raw = self.idempotency_key or self.values.get("idempotency_key")
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        return text or None
+
+
+class BatchReceiptPayload(BaseModel):
+    """批处理回执写入请求。
+
+    回执可以按 task_id、task_no 或 execution_id 任意一种方式定位任务；
+    ``status`` 可以是中文（已完成/已失败）或规范 code（succeeded/failed），
+    ``action`` 可以省略，由 status 推导为「写入完成」或「写入失败」。
+    """
+
+    task_id: int | None = None
+    task_no: str | None = None
+    execution_id: str | None = None
+    action: str | None = None
+    status: str | None = None
+    source: str | None = None
+    idempotency_key: str | None = None
+    receipt_id: str | None = None
+    message: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+    values: dict[str, Any] = Field(default_factory=dict)
+
+    def merged(self) -> "BatchReceiptPayload":
+        """把 values 里夹带的字段合并进顶层，兼容 {values: {...}} 的旧写法。"""
+        if not self.values:
+            return self
+        data = self.model_dump()
+        for key in ("task_id", "task_no", "execution_id", "action", "status", "source", "idempotency_key", "receipt_id", "message"):
+            if data.get(key) in (None, "") and self.values.get(key) is not None:
+                data[key] = self.values[key]
+        if not data.get("detail") and isinstance(self.values.get("detail"), dict):
+            data["detail"] = self.values["detail"]
+        return BatchReceiptPayload(**data)
+
+
+class BatchTimeoutPayload(BaseModel):
+    """调度器超时结束请求。"""
+
+    values: dict[str, Any] = Field(default_factory=dict)
+    task_id: int | None = None
+    plan_id: int | None = None
+    idempotency_key: str | None = None
+    message: str | None = None
+    reason: str | None = None
 
 
 

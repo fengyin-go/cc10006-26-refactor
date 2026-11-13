@@ -70,7 +70,7 @@ import { request } from '@/api/client'
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/schedule'
-const columns = ["计划编号", "任务列表", "依赖图定义", "调度表达式", "并发上限", "失败处理", "超时秒数", "通知策略"]
+const columns = ["计划编号", "任务列表", "依赖图定义", "调度表达式", "并发上限", "失败处理", "超时秒数", "通知策略", "执行状态", "最终状态", "触发来源"]
 const actions = ["提交校验", "启动编排", "停止编排"]
 const statuses = ["草稿", "待校验", "运行中", "已停止"]
 const stats = [{"label": "编排计划总数", "value": 0}, {"label": "运行中计划", "value": 0}, {"label": "待校验计划", "value": 0}]
@@ -101,8 +101,9 @@ async function runAction(action: string, row: Row) {
       method: 'POST',
       body: JSON.stringify({ action }),
     })
-    if (!response.ok) {
-      throw new Error('编排调度动作未生效，请稍后重试')
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.message || '编排调度动作未生效，请稍后重试')
     }
     await reload()
   } catch (error) {

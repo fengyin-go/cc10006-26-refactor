@@ -57,6 +57,7 @@
 
     <footer class="page-foot">
       <span>共 {{ total }} 条批量转换记录</span>
+      <span v-if="lastReceipt">最近回执：{{ lastReceipt.动作 }} · {{ lastReceipt.最终状态 }} · 来源 {{ lastReceipt.触发来源 }}</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -70,7 +71,7 @@ import { request } from '@/api/client'
 type Row = Record<string, string | number | null>
 
 const ENDPOINT = '/api/batch'
-const columns = ["任务编号", "输入路径", "处理脚本", "输出路径", "分区覆盖", "依赖上游", "重试策略", "超时终止"]
+const columns = ["任务编号", "输入路径", "处理脚本", "输出路径", "分区覆盖", "依赖上游", "重试策略", "超时终止", "执行状态", "终态", "触发来源"]
 const actions = ["提交调度", "启动任务", "终止任务", "归档结果"]
 const statuses = ["草稿", "待调度", "运行中", "已完成", "已失败"]
 const stats = [{"label": "批处理任务总数", "value": 0}, {"label": "运行中任务", "value": 0}, {"label": "已完成任务", "value": 0}]
@@ -78,6 +79,7 @@ const stats = [{"label": "批处理任务总数", "value": 0}, {"label": "运行
 const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
+const lastReceipt = ref<Record<string, string> | null>(null)
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
 
@@ -99,11 +101,13 @@ async function runAction(action: string, row: Row) {
   try {
     const response = await request(`${ENDPOINT}/${row.id}/actions`, {
       method: 'POST',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, source: 'page' }),
     })
-    if (!response.ok) {
-      throw new Error('批量转换动作未生效，请稍后重试')
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.message || '批量转换动作未生效，请稍后重试')
     }
+    lastReceipt.value = payload.receipt ?? null
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '批量转换操作失败'
